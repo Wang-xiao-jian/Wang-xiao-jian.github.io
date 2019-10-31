@@ -1,13 +1,13 @@
 ---
-layout: post
-title: 初次见面
-subtitle: 关于写博客的原因
-date: 2019-10-31
-author: "riki"
+layout:		post
+title: 		"初次见面"
+subtitle: 	"关于写博客的原因"
+date: 		2019-10-31
+author: 	"riki"
 header-img: "img/post-bg-unix-linux.jpg"
 tags:
-	-随笔
-	-life
+- 随笔
+- life
 ---
 
 
