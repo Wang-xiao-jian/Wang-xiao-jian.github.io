@@ -3,7 +3,7 @@ layout: post
 title: "UNIX IPC"
 data: 2019-11-03 23:04:00 +0800
 author: "riki"
-header-img: "img/post-bg-unix-linux.jpg"
+header-img: "img/20191103.jpg"
 tags:
 - UNIX
 - IPC
