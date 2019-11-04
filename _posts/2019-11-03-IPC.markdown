@@ -175,3 +175,121 @@ void client(int rd, int wd)
 }
 ```
 
+#### FIFO
+
+FIFO(first in first out)代指先进先出，在Unix中类似于管道，它也是一个单向的数据流，但是与管道不同的是它拥有名字。每一FIFO都有一个路径名与之对应，从而允许无亲缘关系的进程访问同一个FIFO，故而FIFO也称为有名管道。
+
+##### FIFO的创建与打开
+
+FIFO由mkfifo方法创建，在创建之后还需要通过open或者fopen(某个I/O打开函数)打开：
+
+```c++
+#include <sys/stat.h>	//mkfifo, 6个权限常值
+#include <sys/types.h>
+
+int mkfifo(const char* pathname, mode_t mode);
+//若成功则返回0，若出错则返回-1
+```
+
+pathname就是一个普通的Unix路径名，它就是该FIFO的名字。参数mode用来指定文件的权限位，当然它会被进程等文件创建掩码所修改。
+
+此外mkfifo暗含了O_CREAT | O_EXCL，这表明了要么创建一个新的FIFO，要么如果该FIFO已存在，就会返回一个EEXIST错误。因此当创建一个FIFO的时候，检查是否成功很必要，如果返回EEXSIT错误就应该调用open来打开它。
+
+当使用mkfifo方法成功创建了一个FIFO之后，如果想要使用它传递消息，那么还必须使用open来打开它：
+
+```c++
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>	//O_RDONLY, O_WRONLY
+
+int open(const char *path, int oflag, ... );
+```
+
+FIFO可以打开来读(指定O_RDONLY)或者打开来写(指定O_WRONLY)，但是FIFO不允许打开来同时读写。对FIFO的write总是往末尾添加数据，对其的read总是从头开始读取数据，因为first in, first out，因此也不能对FIFO调用lseek，如果你想插队它就会给你返回一个ESPIPE错误。
+
+##### FIFO的简单运用
+
+就***管道的应用***中的代码完全可以用FIFO替代，只需要修改main函数部分的代码。
+
+```c++
+#include <cstdio>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <cstring>
+#include <sys/wait.h>
+
+#define FIFO1 "/tmp/fifo.1"
+#define FIFO2 "/tmp/fifo.2"
+#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+const static int MAXLINE = 1024;
+
+int main()
+{
+	pid_t child_pid;
+	int readfd, writefd;
+
+	if ( (mkfifo(FIFO1, FILE_MODE) < 0) && errno != EEXIST)
+		printf("camt create %s\n", FIFO1);
+	if ( (mkfifo(FIFO2, FILE_MODE) < 0) && errno != EEXIST) {
+		unlink(FIFO1);
+		printf("camt create %s\n", FIFO2);
+	}
+
+	if ((child_pid = fork()) == 0) {
+		readfd = open(FIFO1, O_RDONLY, 0);
+		writefd = open(FIFO2, O_WRONLY, 0);
+
+		server(readfd, writefd);
+		_exit(0);
+	}
+	writefd = open(FIFO1, O_WRONLY, 0);
+	readfd = open(FIFO2, O_RDONLY, 0);
+	client(readfd, writefd);
+	waitpid(child_pid, NULL, 0);
+	unlink(FIFO1);
+	unlink(FIFO2);
+	_exit(0);
+}
+```
+
+其实在这里有个很微妙的问题：如果我们交换父进程或者子进程的open的顺序，程序就会不工作。这是因为当还没有一个进程打开FIFO来写的话，那么打开这个FIFO来读的进程就会被阻塞，知道有进程打开这个FIFO来写。如果将父进程的open交换顺序的话，父子进程将打开相同的FIFO来读，但是当时并没有进程打开FIFO来写，由此造成*死锁*(deadlock)。这其实是接下来要写的***管道和FIFO的额外属性***的一部分。
+
+##### 管道和FIFO的额外属性
+
+我本来接下来想先写FIFO的真正表现其优势的应用部分，但是发现这部分中有一部分还是要先了解接下来要讲的FIFO的额外属性有关系，所以就先写这部分我觉得光看书并不容易理解的知识吧。
+
+这些是我们需要知道的就管道和FIFO打开，读出，写入更为详细的相关属性。
+
+###### 非阻塞
+
+一个描述符能够以两种方式设置为非阻塞:
+
+- 在调用open时，直接指定O_NONBLOCK标志，就比如***FIFO的简单应用***中,第28行代码就可以写为：
+
+  ```
+  readfd = open(FIFO1, O_RDONLY | O_NONBLOCK, 0);
+  ```
+
+- 但是之前说到的管道并不会调用open来打开，那么就只能使用第二种方法：对于一个已经打开的描述符，可以调用fcntl来启用O_NONBLOCK。
+
+  ```c++
+  #include <fcntl.h>
+  int flag = fcntl(fd, F_GETFL, 0);	//获得当前文件状态标志
+  flag |= O_NONBLOCK;					//启用非阻塞
+  fcntl(fd, FSETFL, flag);
+  ```
+
+  如果直接使用以下一行代码来设置文件状态标志的话，会清除原来的文件状态标志，是不可取的。
+
+  ```c++
+  fcntl(fd, FSETFL, O_NONBLOCK);
+  ```
+
+
+以下图片中的内容展示了指定非阻塞标志对于打开FIFO只读，打开FIFO只写，从空管道或者空FIFO中读取以及往管道或FIFO中写入的影响：
+
+![](/Desktop/blog/img/in-post/额外属性.png)
+
