@@ -12,7 +12,7 @@ typora-root-url: ..
 
 > 未完待续
 
-###### 进程间通信的意义
+#### 进程间通信的意义
 
 大多数重要的程序都涉及进程间通信(interprocess communication, IPC)，就我来说，linux环境下在命令行中使用管道符是很常见的。
 
@@ -24,13 +24,13 @@ typora-root-url: ..
 
 后面两种方法其实还可以结合起来，使用多个进程，每个进程都能包含多个线程，这样不同进程之间可以通信，进程间的多个线程也可以通信。这样在有多个处理器的系统之上，多个进程也许可以同时运行，单个进程中的多个线程也许也可以同时运行，这样就有望减少完成指定任务的时间。
 
-###### 通过学习UNIX网络编程卷2：进程间通信我要掌握的内容
+#### 通过学习UNIX网络编程卷2：进程间通信我要掌握的内容
 
 - 消息传递的方式：管道，FIFO，Posix消息队列，System V消息队列
 - 同步：互斥锁和条件变量，读写锁，信号量
 - 共享内存：这也是消息传递的方式
 
-###### 信息传递的方式(IPC的类型)
+#### 信息传递的方式(IPC的类型)
 
 我们在一个系统上运行多个进程，每个进程都有自己的地址空间，这些进程间信息传递的方式有多种形式：
 
@@ -40,7 +40,7 @@ typora-root-url: ..
 - 第二种是通过驻留在内核中的某种信息来实现进程间的信息传递，管道就是这样的一个例子。这种形式下，进程对共享信息的访问都是一次内核级别的系统调用。
 - 第三种是设置一个每个进程都能访问的共享内存区。一旦设置好该共享内存，就不涉及内核什么事了。
 
-###### IPC对象的持续性
+#### IPC对象的持续性
 
 任意类型的IPC对象的*持续性*(persistence)，我们定义为该类型的一个对象一直存在多长时间，或者说什么时候才会消亡。
 
@@ -60,10 +60,118 @@ IPC对象的类型与其持续性联系起来可能会带来一些令人迷惑�
 
 对于一种给定形式的IPC对象，要求它具有随文件系统的持续性可能会使其性能下降，而开篇就说过，IPC的一个设计目标就是高性能。
 
-###### 名字空间
+#### 名字空间
 
 在介绍***IPC对象的持续性***时提到，随内核持续的IPC对象中，有一个叫做Posix有名信号量，这里的有名指的就是有名字，或者说是标识符。
 
 名字非常重要，多个进程需要通过拥有名字的某种类型的IPC来进行信息交换。其中一个进程可以创建IPC对象，而其它的进程则可以根据名字指定同一个对象，依此来进行通信。如果IPC对象没有名字的话(例如管道)，那么使用该IPC的多个进程必须具备亲缘关系。
 
 对于一种给定的IPC类型，其可能的名字的集合我们称之为*名字空间*。名字空间非常重要，它是客户与服务器彼此连接以交换信息的手段，典型的做法是服务器以某个名字创建一个IPC对象，客户则使用该名字访问同一个IPC对象。
+
+#### 管道
+
+管道是最初Unix IPC的形式，但是它最根本局限是没有名字，因此管道只能应用于有亲缘关系的进程之间。它的数据是维护在内核中的，因此每一次对数据的访问都是对内核的系统调用。对管道中数据的访问通常是使用read和write方法。
+
+##### 管道的创建
+
+所有式样的Unix都提供管道，它由pipe函数创建：
+
+```c++
+#include <unistd.h>
+int pipe(int fd[2]);
+																	若成功返回0，出错返回-1
+```
+
+它返回了两个描述符：fd[1]用来写，fd[0]用来读。由此它创建了一个单向的数据流，由fd[1]流向fd[0]。
+
+##### 管道的关闭
+
+调用pipe就相当于创建并打开了返回的两个读写描述符，关闭则使用close。
+
+##### 管道的应用
+
+虽然单个进程就能创建管道，但是我们很少会在单个进程内使用，因为没什么意义。管道经典的应用是为父子进程提供通信的手段。
+
+之前提到，pipe能够创建一个单向的数据流，那么我们可以在父进程中创建两个这样的数据流pipe1[2]和pipe2[2]，通过fork生成子进程(通过fork产生的子进程会获得父进程中所有打开着的描述符的副本)。然后我们在父进程中关闭pipe1的读描述符，在子进程中关闭pipe1的写描述符，这样就创建了一个父进程到子进程的单向数据流；同理在父进程中关闭pipe2的写描述符，在子进程中关闭pipe2的读描述符，这样就创建了一个子进程到父进程的单向数据流。就此，父子进程间的双向通信已经建立。
+
+以下例子为子进程作为服务器，父进程作为客户。父进程从标准输入获取文件路径并将其发送给服务器，服务器尝试打开该文件，若打开文件失败则返回失败信息，若打开成功则返回文件内容。
+
+```c++
+#include <unistd.h>
+#include <stdio.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define MAX_BUF 1024
+
+void server(int, int);
+void client(int, int);
+
+int main()
+{
+	int pipe1[2], pipe2[2];
+	pipe(pipe1);
+	pipe(pipe2);	
+	pid_t child_pid;
+	if (0 == (child_pid = fork())) {
+		close(pipe1[0]);
+		close(pipe2[1]);
+
+		server(pipe2[0], pipe1[1]);
+		_exit(0);
+	}
+
+	close(pipe1[1]);
+	close(pipe2[0]);
+	client(pipe1[0], pipe2[1]);
+
+	waitpid(child_pid, NULL, 0);
+
+	return 0;
+}
+
+void server(int rd, int wd)
+{
+	char buff[MAX_BUF + 1] = { 0 };
+	int n;
+	
+	if ( (n = read(rd, buff, MAX_BUF)) == 0) {
+		printf("EOF while reading pathname\n");
+		_exit(0);
+	}
+
+	buff[n-1] = '\0';
+	int fd;
+
+	if ( (fd = open(buff, O_RDONLY)) < 0) {
+		snprintf(buff + n, sizeof(buff) - n, ": open error, %s\n", strerror(errno));
+		write(wd, buff, strlen(buff));
+		_exit(0);
+	} else {
+		memset(buff, 0, sizeof(buff));
+		while ( (n = read(fd, buff, MAX_BUF)) > 0) {
+			write(wd, buff, strlen(buff));
+			memset(buff, 0, sizeof(buff));
+		}
+	}
+	close(fd);
+}
+
+void client(int rd, int wd)
+{
+	char buff[MAX_BUF + 1] = { 0 };
+	fgets(buff, MAX_BUF, stdin);
+
+	write(wd, buff, strlen(buff));
+	int n;
+	memset(buff, 0, sizeof(buff));
+	while ( (n = read(rd, buff, MAX_BUF)) > 0) {
+		write(STDOUT_FILENO, buff, n);
+		memset(buff, 0, sizeof(buff));
+	}
+}
+```
+
