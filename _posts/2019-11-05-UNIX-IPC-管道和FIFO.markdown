@@ -146,7 +146,7 @@ int mkfifo(const char* pathname, mode_t mode);
 
 pathname就是一个普通的Unix路径名，它就是该FIFO的名字。参数mode用来指定文件的权限位，当然它会被进程等文件创建掩码所修改。
 
-此外mkfifo暗含了O_CREAT | O_EXCL，这表明了要么创建一个新的FIFO，要么如果该FIFO已存在，就会返回一个EEXIST错误。因此当创建一个FIFO的时候，检查是否成功很必要，如果返回EEXSIT错误就应该调用open来打开它。
+此外mkfifo暗含了`O_CREAT | O_EXCL`，这表明了要么创建一个新的FIFO，要么如果该FIFO已存在，就会返回一个EEXIST错误。因此当创建一个FIFO的时候，检查是否成功很必要，如果返回EEXSIT错误就应该调用open来打开它。
 
 当使用mkfifo方法成功创建了一个FIFO之后，如果想要使用它传递消息，那么还必须使用open来打开它：
 
