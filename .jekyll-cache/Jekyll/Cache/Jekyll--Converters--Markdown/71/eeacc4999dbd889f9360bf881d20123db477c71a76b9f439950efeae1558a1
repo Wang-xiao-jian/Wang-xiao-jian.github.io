@@ -1,0 +1,297 @@
+I"�q<blockquote>
+  <p>未完待续</p>
+</blockquote>
+
+<h4 id="进程间通信的意义">进程间通信的意义</h4>
+
+<p>大多数重要的程序都涉及进程间通信(interprocess communication, IPC)，就我来说，linux环境下在命令行中使用管道符是很常见的。</p>
+
+<p>有一个设计原则是：把应用程序设计为一组相互通信的小片段比将其设计为单个庞大的程序更好。为什么呢？应用程序的构建方法有这么几种：</p>
+
+<ul>
+  <li>用一个庞大的程序完成所有的工作。程序的各部分可以设计为函数，函数之间通过参数，返回值，全局变量来交换信息。</li>
+  <li>使用多个程序，每个程序完成工作的一部分，程序之间使用某种IPC来通信。UNIX很多的标准工具就是这种形式，它们使用shell管道传递信息。</li>
+  <li>使用一个包含多线程的程序，每个线程完成工作的一部分，线程之间使用某种IPC来通信(这里仍然使用术语IPC来表述)。</li>
+</ul>
+
+<p>后面两种方法其实还可以结合起来，使用多个进程，每个进程都能包含多个线程，这样不同进程之间可以通信，进程间的多个线程也可以通信。这样在有多个处理器的系统之上，多个进程也许可以同时运行，单个进程中的多个线程也许也可以同时运行，这样就有望减少完成指定任务的时间。</p>
+
+<h4 id="通过学习unix网络编程卷2进程间通信我要掌握的内容">通过学习UNIX网络编程卷2：进程间通信我要掌握的内容</h4>
+
+<ul>
+  <li>消息传递的方式：管道，FIFO，Posix消息队列，System V消息队列</li>
+  <li>同步：互斥锁和条件变量，读写锁，信号量</li>
+  <li>共享内存：这也是消息传递的方式</li>
+</ul>
+
+<h4 id="信息传递的方式ipc的类型">信息传递的方式(IPC的类型)</h4>
+
+<p>我们在一个系统上运行多个进程，每个进程都有自己的地址空间，这些进程间信息传递的方式有多种形式：</p>
+
+<p><img src="/img/in-post/ipc类型.jpg" alt="img" /></p>
+
+<ul>
+  <li>第一种形式是通过访问文件系统上某个文件中的信息来实现信息传递。每个进程必须得穿越内核来访问这些信息(read, write,lseek,etc.)，同时还需要实现某种同步防止多个写入者互相干扰，防止读取者被写入者干扰。</li>
+  <li>第二种是通过驻留在内核中的某种信息来实现进程间的信息传递，管道就是这样的一个例子。这种形式下，进程对共享信息的访问都是一次内核级别的系统调用。</li>
+  <li>第三种是设置一个每个进程都能访问的共享内存区。一旦设置好该共享内存，就不涉及内核什么事了。</li>
+</ul>
+
+<h4 id="ipc对象的持续性">IPC对象的持续性</h4>
+
+<p>任意类型的IPC对象的<em>持续性</em>(persistence)，我们定义为该类型的一个对象一直存在多长时间，或者说什么时候才会消亡。</p>
+
+<p>有三种类型的持续性：随进程持续的(process-persistence)，随内核持续的(kernal-persistence)，随文件系统持续的(filesystem-persistence)</p>
+
+<ul>
+  <li>随进程持续的：IPC一直存在到打开着该对象的最后一个进程关闭该对象为止，管道和FIFO都是这种对象。</li>
+  <li>随内核持续的：IPC对象一直存在到内核自举或者显示的删除该对象为止。System V的消息队列、信号量、共享内存区就是这种类型的IPC对象。</li>
+  <li>随文件系统持续的：IPC对象一直持续到显示删除该对象为止，即使内核自举了，该对象还是保持其值。</li>
+</ul>
+
+<p>IPC对象的类型与其持续性联系起来可能会带来一些令人迷惑的地方：<strong><em>信息传递的方式(IPC的类型)</em></strong>中提到过的管道，它的数据是在内核中维护的，但它并不是随内核持续的，而是随进程持续的。</p>
+
+<p>随内核持续的IPC对象有：Posix消息队列、Posix有名信号量、Posix共享内存区、System V消息队列、System V信号量、System V共享内存区；</p>
+
+<p>随进程持续的IPC对象有：管道，FIFO，Posix互斥锁，Posix条件变量，Posix读写锁，fcntl记录上锁，Posix基于内存的信号量，TCP、UDP、Unix域套接字；</p>
+
+<p>当Posix消息队列、信号量、共享内存区是使用映射文件实现的，那么它们是随文件系统持续的。显然，往一个文件中写入数据提供了随文件系统的持续性，但是这并不是一个好的IPC的方法。多数形式的IPC并不打算在内核重新自举后仍然存在，因为进程不可能跨越内核重新自举而存在。</p>
+
+<p>对于一种给定形式的IPC对象，要求它具有随文件系统的持续性可能会使其性能下降，而开篇就说过，IPC的一个设计目标就是高性能。</p>
+
+<h4 id="名字空间">名字空间</h4>
+
+<p>在介绍<strong><em>IPC对象的持续性</em></strong>时提到，随内核持续的IPC对象中，有一个叫做Posix有名信号量，这里的有名指的就是有名字，或者说是标识符。</p>
+
+<p>名字非常重要，多个进程需要通过拥有名字的某种类型的IPC来进行信息交换。其中一个进程可以创建IPC对象，而其它的进程则可以根据名字指定同一个对象，依此来进行通信。如果IPC对象没有名字的话(例如管道)，那么使用该IPC的多个进程必须具备亲缘关系。</p>
+
+<p>对于一种给定的IPC类型，其可能的名字的集合我们称之为<em>名字空间</em>。名字空间非常重要，它是客户与服务器彼此连接以交换信息的手段，典型的做法是服务器以某个名字创建一个IPC对象，客户则使用该名字访问同一个IPC对象。</p>
+
+<h4 id="管道">管道</h4>
+
+<p>管道是最初Unix IPC的形式，但是它最根本局限是没有名字，因此管道只能应用于有亲缘关系的进程之间。它的数据是维护在内核中的，因此每一次对数据的访问都是对内核的系统调用。对管道中数据的访问通常是使用read和write方法。</p>
+
+<h5 id="管道的创建">管道的创建</h5>
+
+<p>所有式样的Unix都提供管道，它由pipe函数创建：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#include &lt;unistd.h&gt;
+</span><span class="kt">int</span> <span class="nf">pipe</span><span class="p">(</span><span class="kt">int</span> <span class="n">fd</span><span class="p">[</span><span class="mi">2</span><span class="p">]);</span>
+<span class="c1">//若成功返回0，出错返回-1</span>
+</code></pre></div></div>
+
+<p>它返回了两个描述符：fd[1]用来写，fd[0]用来读。由此它创建了一个单向的数据流，由fd[1]流向fd[0]。</p>
+
+<h5 id="管道的关闭">管道的关闭</h5>
+
+<p>调用pipe就相当于创建并打开了返回的两个读写描述符，关闭则使用close。</p>
+
+<h5 id="管道的应用">管道的应用</h5>
+
+<p>虽然单个进程就能创建管道，但是我们很少会在单个进程内使用，因为没什么意义。管道经典的应用是为父子进程提供通信的手段。</p>
+
+<p>之前提到，pipe能够创建一个单向的数据流，那么我们可以在父进程中创建两个这样的数据流pipe1[2]和pipe2[2]，通过fork生成子进程(通过fork产生的子进程会获得父进程中所有打开着的描述符的副本)。然后我们在父进程中关闭pipe1的读描述符，在子进程中关闭pipe1的写描述符，这样就创建了一个父进程到子进程的单向数据流；同理在父进程中关闭pipe2的写描述符，在子进程中关闭pipe2的读描述符，这样就创建了一个子进程到父进程的单向数据流。就此，父子进程间的双向通信已经建立。</p>
+
+<p>以下例子为子进程作为服务器，父进程作为客户。父进程从标准输入获取文件路径并将其发送给服务器，服务器尝试打开该文件，若打开文件失败则返回失败信息，若打开成功则返回文件内容。</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#include &lt;unistd.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;string.h&gt;
+</span>
+<span class="cp">#define MAX_BUF 1024
+</span>
+<span class="kt">void</span> <span class="nf">server</span><span class="p">(</span><span class="kt">int</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+<span class="kt">void</span> <span class="nf">client</span><span class="p">(</span><span class="kt">int</span><span class="p">,</span> <span class="kt">int</span><span class="p">);</span>
+
+<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span>
+<span class="p">{</span>
+	<span class="kt">int</span> <span class="n">pipe1</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">pipe2</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
+	<span class="n">pipe</span><span class="p">(</span><span class="n">pipe1</span><span class="p">);</span>
+	<span class="n">pipe</span><span class="p">(</span><span class="n">pipe2</span><span class="p">);</span>	
+	<span class="n">pid_t</span> <span class="n">child_pid</span><span class="p">;</span>
+	<span class="k">if</span> <span class="p">(</span><span class="mi">0</span> <span class="o">==</span> <span class="p">(</span><span class="n">child_pid</span> <span class="o">=</span> <span class="n">fork</span><span class="p">()))</span> <span class="p">{</span>
+		<span class="n">close</span><span class="p">(</span><span class="n">pipe1</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+		<span class="n">close</span><span class="p">(</span><span class="n">pipe2</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+
+		<span class="n">server</span><span class="p">(</span><span class="n">pipe2</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pipe1</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+		<span class="n">_exit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+	<span class="p">}</span>
+
+	<span class="n">close</span><span class="p">(</span><span class="n">pipe1</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+	<span class="n">close</span><span class="p">(</span><span class="n">pipe2</span><span class="p">[</span><span class="mi">0</span><span class="p">]);</span>
+	<span class="n">client</span><span class="p">(</span><span class="n">pipe1</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">pipe2</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+
+	<span class="n">waitpid</span><span class="p">(</span><span class="n">child_pid</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+	<span class="k">return</span> <span class="mi">0</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kt">void</span> <span class="nf">server</span><span class="p">(</span><span class="kt">int</span> <span class="n">rd</span><span class="p">,</span> <span class="kt">int</span> <span class="n">wd</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="kt">char</span> <span class="n">buff</span><span class="p">[</span><span class="n">MAX_BUF</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span> <span class="mi">0</span> <span class="p">};</span>
+	<span class="kt">int</span> <span class="n">n</span><span class="p">;</span>
+	
+	<span class="k">if</span> <span class="p">(</span> <span class="p">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">rd</span><span class="p">,</span> <span class="n">buff</span><span class="p">,</span> <span class="n">MAX_BUF</span><span class="p">))</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">printf</span><span class="p">(</span><span class="s">"EOF while reading pathname</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+		<span class="n">_exit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+	<span class="p">}</span>
+
+	<span class="n">buff</span><span class="p">[</span><span class="n">n</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="sc">'\0'</span><span class="p">;</span>
+	<span class="kt">int</span> <span class="n">fd</span><span class="p">;</span>
+
+	<span class="k">if</span> <span class="p">(</span> <span class="p">(</span><span class="n">fd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">buff</span><span class="p">,</span> <span class="n">O_RDONLY</span><span class="p">))</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">snprintf</span><span class="p">(</span><span class="n">buff</span> <span class="o">+</span> <span class="n">n</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">buff</span><span class="p">)</span> <span class="o">-</span> <span class="n">n</span><span class="p">,</span> <span class="s">": open error, %s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">strerror</span><span class="p">(</span><span class="n">errno</span><span class="p">));</span>
+		<span class="n">write</span><span class="p">(</span><span class="n">wd</span><span class="p">,</span> <span class="n">buff</span><span class="p">,</span> <span class="n">strlen</span><span class="p">(</span><span class="n">buff</span><span class="p">));</span>
+		<span class="n">_exit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+	<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+		<span class="n">memset</span><span class="p">(</span><span class="n">buff</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">buff</span><span class="p">));</span>
+		<span class="k">while</span> <span class="p">(</span> <span class="p">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">buff</span><span class="p">,</span> <span class="n">MAX_BUF</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+			<span class="n">write</span><span class="p">(</span><span class="n">wd</span><span class="p">,</span> <span class="n">buff</span><span class="p">,</span> <span class="n">strlen</span><span class="p">(</span><span class="n">buff</span><span class="p">));</span>
+			<span class="n">memset</span><span class="p">(</span><span class="n">buff</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">buff</span><span class="p">));</span>
+		<span class="p">}</span>
+	<span class="p">}</span>
+	<span class="n">close</span><span class="p">(</span><span class="n">fd</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="kt">void</span> <span class="nf">client</span><span class="p">(</span><span class="kt">int</span> <span class="n">rd</span><span class="p">,</span> <span class="kt">int</span> <span class="n">wd</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="kt">char</span> <span class="n">buff</span><span class="p">[</span><span class="n">MAX_BUF</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span> <span class="mi">0</span> <span class="p">};</span>
+	<span class="n">fgets</span><span class="p">(</span><span class="n">buff</span><span class="p">,</span> <span class="n">MAX_BUF</span><span class="p">,</span> <span class="n">stdin</span><span class="p">);</span>
+
+	<span class="n">write</span><span class="p">(</span><span class="n">wd</span><span class="p">,</span> <span class="n">buff</span><span class="p">,</span> <span class="n">strlen</span><span class="p">(</span><span class="n">buff</span><span class="p">));</span>
+	<span class="kt">int</span> <span class="n">n</span><span class="p">;</span>
+	<span class="n">memset</span><span class="p">(</span><span class="n">buff</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">buff</span><span class="p">));</span>
+	<span class="k">while</span> <span class="p">(</span> <span class="p">(</span><span class="n">n</span> <span class="o">=</span> <span class="n">read</span><span class="p">(</span><span class="n">rd</span><span class="p">,</span> <span class="n">buff</span><span class="p">,</span> <span class="n">MAX_BUF</span><span class="p">))</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">write</span><span class="p">(</span><span class="n">STDOUT_FILENO</span><span class="p">,</span> <span class="n">buff</span><span class="p">,</span> <span class="n">n</span><span class="p">);</span>
+		<span class="n">memset</span><span class="p">(</span><span class="n">buff</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="k">sizeof</span><span class="p">(</span><span class="n">buff</span><span class="p">));</span>
+	<span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h4 id="fifo">FIFO</h4>
+
+<p>FIFO(first in first out)代指先进先出，在Unix中类似于管道，它也是一个单向的数据流，但是与管道不同的是它拥有名字。每一FIFO都有一个路径名与之对应，从而允许无亲缘关系的进程访问同一个FIFO，故而FIFO也称为有名管道。</p>
+
+<h5 id="fifo的创建与打开">FIFO的创建与打开</h5>
+
+<p>FIFO由mkfifo方法创建，在创建之后还需要通过open或者fopen(某个I/O打开函数)打开：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#include &lt;sys/stat.h&gt;	//mkfifo, 6个权限常值
+#include &lt;sys/types.h&gt;
+</span>
+<span class="kt">int</span> <span class="nf">mkfifo</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span><span class="o">*</span> <span class="n">pathname</span><span class="p">,</span> <span class="n">mode_t</span> <span class="n">mode</span><span class="p">);</span>
+<span class="c1">//若成功则返回0，若出错则返回-1</span>
+</code></pre></div></div>
+
+<p>pathname就是一个普通的Unix路径名，它就是该FIFO的名字。参数mode用来指定文件的权限位，当然它会被进程等文件创建掩码所修改。</p>
+
+<table>
+  <tbody>
+    <tr>
+      <td>此外mkfifo暗含了O_CREAT</td>
+      <td>O_EXCL，这表明了要么创建一个新的FIFO，要么如果该FIFO已存在，就会返回一个EEXIST错误。因此当创建一个FIFO的时候，检查是否成功很必要，如果返回EEXSIT错误就应该调用open来打开它。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>当使用mkfifo方法成功创建了一个FIFO之后，如果想要使用它传递消息，那么还必须使用open来打开它：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#include &lt;sys/types.h&gt;
+#include &lt;sys/stat.h&gt;
+#include &lt;fcntl.h&gt;	//O_RDONLY, O_WRONLY
+</span>
+<span class="kt">int</span> <span class="nf">open</span><span class="p">(</span><span class="k">const</span> <span class="kt">char</span> <span class="o">*</span><span class="n">path</span><span class="p">,</span> <span class="kt">int</span> <span class="n">oflag</span><span class="p">,</span> <span class="p">...</span> <span class="p">);</span>
+</code></pre></div></div>
+
+<p>FIFO可以打开来读(指定O_RDONLY)或者打开来写(指定O_WRONLY)，但是FIFO不允许打开来同时读写。对FIFO的write总是往末尾添加数据，对其的read总是从头开始读取数据，因为first in, first out，因此也不能对FIFO调用lseek，如果你想插队它就会给你返回一个ESPIPE错误。</p>
+
+<h5 id="fifo的简单运用">FIFO的简单运用</h5>
+
+<p>就<strong><em>管道的应用</em></strong>中的代码完全可以用FIFO替代，只需要修改main函数部分的代码。</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#include &lt;cstdio&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/stat.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;cstring&gt;
+#include &lt;sys/wait.h&gt;
+</span>
+<span class="cp">#define FIFO1 "/tmp/fifo.1"
+#define FIFO2 "/tmp/fifo.2"
+#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+</span><span class="k">const</span> <span class="k">static</span> <span class="kt">int</span> <span class="n">MAXLINE</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">;</span>
+
+<span class="kt">int</span> <span class="nf">main</span><span class="p">()</span>
+<span class="p">{</span>
+	<span class="n">pid_t</span> <span class="n">child_pid</span><span class="p">;</span>
+	<span class="kt">int</span> <span class="n">readfd</span><span class="p">,</span> <span class="n">writefd</span><span class="p">;</span>
+
+	<span class="k">if</span> <span class="p">(</span> <span class="p">(</span><span class="n">mkfifo</span><span class="p">(</span><span class="n">FIFO1</span><span class="p">,</span> <span class="n">FILE_MODE</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">errno</span> <span class="o">!=</span> <span class="n">EEXIST</span><span class="p">)</span>
+		<span class="n">printf</span><span class="p">(</span><span class="s">"camt create %s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">FIFO1</span><span class="p">);</span>
+	<span class="k">if</span> <span class="p">(</span> <span class="p">(</span><span class="n">mkfifo</span><span class="p">(</span><span class="n">FIFO2</span><span class="p">,</span> <span class="n">FILE_MODE</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;&amp;</span> <span class="n">errno</span> <span class="o">!=</span> <span class="n">EEXIST</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">unlink</span><span class="p">(</span><span class="n">FIFO1</span><span class="p">);</span>
+		<span class="n">printf</span><span class="p">(</span><span class="s">"camt create %s</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">FIFO2</span><span class="p">);</span>
+	<span class="p">}</span>
+
+	<span class="k">if</span> <span class="p">((</span><span class="n">child_pid</span> <span class="o">=</span> <span class="n">fork</span><span class="p">())</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+		<span class="n">readfd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">FIFO1</span><span class="p">,</span> <span class="n">O_RDONLY</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+		<span class="n">writefd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">FIFO2</span><span class="p">,</span> <span class="n">O_WRONLY</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+
+		<span class="n">server</span><span class="p">(</span><span class="n">readfd</span><span class="p">,</span> <span class="n">writefd</span><span class="p">);</span>
+		<span class="n">_exit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+	<span class="p">}</span>
+	<span class="n">writefd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">FIFO1</span><span class="p">,</span> <span class="n">O_WRONLY</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+	<span class="n">readfd</span> <span class="o">=</span> <span class="n">open</span><span class="p">(</span><span class="n">FIFO2</span><span class="p">,</span> <span class="n">O_RDONLY</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+	<span class="n">client</span><span class="p">(</span><span class="n">readfd</span><span class="p">,</span> <span class="n">writefd</span><span class="p">);</span>
+	<span class="n">waitpid</span><span class="p">(</span><span class="n">child_pid</span><span class="p">,</span> <span class="nb">NULL</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>
+	<span class="n">unlink</span><span class="p">(</span><span class="n">FIFO1</span><span class="p">);</span>
+	<span class="n">unlink</span><span class="p">(</span><span class="n">FIFO2</span><span class="p">);</span>
+	<span class="n">_exit</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>其实在这里有个很微妙的问题：如果我们交换父进程或者子进程的open的顺序，程序就会不工作。这是因为当还没有一个进程打开FIFO来写的话，那么打开这个FIFO来读的进程就会被阻塞，知道有进程打开这个FIFO来写。如果将父进程的open交换顺序的话，父子进程将打开相同的FIFO来读，但是当时并没有进程打开FIFO来写，由此造成<em>死锁</em>(deadlock)。这其实是接下来要写的<strong><em>管道和FIFO的额外属性</em></strong>的一部分。</p>
+
+<h5 id="管道和fifo的额外属性">管道和FIFO的额外属性</h5>
+
+<p>我本来接下来想先写FIFO的真正表现其优势的应用部分，但是发现这部分中有一部分还是要先了解接下来要讲的FIFO的额外属性有关系，所以就先写这部分我觉得光看书并不容易理解的知识吧。</p>
+
+<p>这些是我们需要知道的就管道和FIFO打开，读出，写入更为详细的相关属性。</p>
+
+<h6 id="非阻塞">非阻塞</h6>
+
+<p>一个描述符能够以两种方式设置为非阻塞:</p>
+
+<ul>
+  <li>
+    <p>在调用open时，直接指定O_NONBLOCK标志，就比如<strong><em>FIFO的简单应用</em></strong>中,第28行代码就可以写为：</p>
+
+    <div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>readfd = open(FIFO1, O_RDONLY | O_NONBLOCK, 0);
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p>但是之前说到的管道并不会调用open来打开，那么就只能使用第二种方法：对于一个已经打开的描述符，可以调用fcntl来启用O_NONBLOCK。</p>
+
+    <div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="cp">#include &lt;fcntl.h&gt;
+</span><span class="kt">int</span> <span class="n">flag</span> <span class="o">=</span> <span class="n">fcntl</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">F_GETFL</span><span class="p">,</span> <span class="mi">0</span><span class="p">);</span>	<span class="c1">//获得当前文件状态标志</span>
+<span class="n">flag</span> <span class="o">|=</span> <span class="n">O_NONBLOCK</span><span class="p">;</span>					<span class="c1">//启用非阻塞</span>
+<span class="n">fcntl</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span> <span class="n">FSETFL</span><span class="p">,</span> <span class="n">flag</span><span class="p">);</span>
+</code></pre></div>    </div>
+
+    <p>如果直接使用以下一行代码来设置文件状态标志的话，会清除原来的文件状态标志，是不可取的。</p>
+
+    <pre><code class="language-C">fcntl(fd, FSETFL, O_NONBLOCK);
+</code></pre>
+  </li>
+</ul>
+
+<p>以下图片中的内容展示了指定非阻塞标志对于打开FIFO只读，打开FIFO只写，从空管道或者空FIFO中读取以及往管道或FIFO中写入的影响：</p>
+
+<p><img src="/img/in-post/额外属性.png" alt="" /></p>
+
+:ET
