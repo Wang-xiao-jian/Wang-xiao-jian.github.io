@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "UNIX IPC 管道和FIFO"
+title: "Pipe and FIFO"
 data: 2019-11-05 11:06:00 +0800
 author: "riki"
 header-img: "img/20191105.jpg"
@@ -11,7 +11,7 @@ tags:
 typora-root-url: ..
 ---
 
-> PIPE and FIFO...
+> Learn something about PIPE and FIFO...
 
 管道是最初Unix IPC的形式，但是它最根本的局限是没有名字，因此管道只能应用于有亲缘关系的进程之间。它的数据是维护在内核中的，因此每一次对数据的访问都是对内核的系统调用。对管道中数据的访问通常是使用read和write方法。
 
