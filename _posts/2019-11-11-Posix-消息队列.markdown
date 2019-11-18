@@ -1,6 +1,7 @@
 ---
 layout: post
 title: "Posix 消息队列"
+subtitle: "记录一下学习的Posix消息队列的内容"
 data: 2019-11-11 23:09:00 +0800
 author: "riki"
 header-img: "img/postfm/20191111.jpg"
@@ -12,8 +13,6 @@ typora-root-url: ..
 ---
 
 > 记一个悲愤的双十一...
-
-作为学习的一个不可缺少的部分，记录一下学习的Posix消息队列的内容。
 
 ##### 什么是消息队列
 
