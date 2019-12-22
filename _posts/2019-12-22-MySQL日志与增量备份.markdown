@@ -11,6 +11,8 @@ typora-root-url: ...
 
 > 未完待续...
 
+[TOC]
+
 #### MySQL日志的种类
 
 MySQL的日志主要分为以下 6 种：
@@ -99,21 +101,14 @@ General query log 简单来说就是记录了 `mysqld` 到底做了什么的日�
 
 写入日志的每个记录前面都有以 **#** 开始的一行，以及下方这些内容：
 
--  Query_time：duration
+-  Query_time：语句执行的时间，单位是秒。
 
-  语句执行的时间，单位是秒。
+-  Lock_time：需要锁住的时间，单位是秒。
 
--  Lock_time：duration
+-  Rows_sent：发送到客户端的行数。
 
-  需要锁住的时间，单位是秒。
+-  Rows_examined：服务器层检查的行数。
 
--  Rows_sent：N
-
-  发送到客户端的行数。
-
--  Rows_examined：
-
-  服务器层检查的行数。
 
 ##### Binary log
 
