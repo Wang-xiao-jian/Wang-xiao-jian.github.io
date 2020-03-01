@@ -1,0 +1,122 @@
+---
+layout: post
+title: "久违的更新"
+subtitle: "离上一篇更新竟然快过去了 3 个月..."
+data: 2020-03-01 20:36:00 +0800
+author: "riki"
+header-img: "img/postfm/200301.jpg"
+tags:
+- 随笔
+- Python
+typora-root-url: ...
+---
+
+年前谁也没法想到，作为新世纪二十年代的第一年，听起来常常觉得存在于科幻片中的年份，2020年，以这样不可思议，震撼人心的方式做了它的开场白。我是幸运的，属于受到很小波及，影响的那部分人，然而有的人的人生，却发生了翻天覆地的变化，甚至人生的旅途就此停步。心中有一股悲伤的情绪难以释怀，为这场疫情中失去生计，失去家人，失去生命的人。我们都是渺小的个体，在自然的力量前，往往处于被碾压的地位。
+
+虽然个人的力量很小，但是自己的人生还是要通过这份力量不断向前，要不断增加自己抗风险的能力，以预防遇到这种类似突发事件的时候，能保证自己和自己关心的人能够安然度过。自己的生活还是得靠自己才能过得更好。
+
+不过，这也不应该是我断掉更新的借口...好在在这期间我还是学习了一点新知识的：Python。最初只是抱着想学点新东西的想法去了解 Python，后来了解了之后，发现这种语言确实挺有意思的，门槛我感觉也是比较低的。
+
+和我熟悉的 C++ 不同的是，这是一门脚本性语言，它并不需要编译，而是边运行边解释。因为其执行速度肯定是偏慢的。但是它有着比较明显的优势：开发速度快，有着强大且丰富的第三方库用以支持各种各样的需求实现，这是最吸引我的。
+
+在这期间我其实也就写了几个小脚本：通过 Pillow 模块了解图片处理的一些方法；通过 EXIF 相关模块，获取照片的拍摄事件，拍摄地点GPS信息；偏向运维的，用以检测系统 CPU 占有率以及平均负载的脚本，最后通过pyecharts 以图表的形式展现出来。
+
+以下是我觉得很有意思的一个小脚本，当然有 C++ 也能实现，但是 C++ 的表现形式可能就会复杂一点:
+
+```python
+import os
+import time
+
+def marquee():
+    str = '武汉加油'
+    while (True):
+        os.system('cls')
+        print(str)
+        str = str[1:] + str[0]
+        time.sleep(0.5)
+
+if __name__ = "__main__"
+    marquee()
+```
+
+这是一个实现“跑马灯”效果的脚本，原理十分的简单，但是可以初步的展示出 Python 语言的灵活性。
+
+以下代码比较长，是用来检测系统的 cpu 占有率的，先将检测到的数据记录到 csv 文件中，再通过pyecharts模块，以表格的形式展示出来。可以通过设置定时任务来实现一定频率的去检测 CPU 占有率数值，比如 crontab 等。
+
+运行该脚本需要安装 `psutil` 模块以及 `pyecharts` 模块，我自己是在 Python3.8.1 环境下运行的，如果你的Python 版本低于 3.6 的话，建议要安装 0.x 版本的pyecharts，反之则安装最新版本的即可。
+
+```python
+import csv
+import time
+import os
+
+import psutil
+import pyecharts
+from pyecharts import options as opts
+from pyecharts.charts import Line
+
+today = time.strftime('%F', time.localtime(time.time()))
+filename = today + '_cpu.csv'
+
+def get_csvhead():
+    res = ['time', 'turtle']
+    for i in range(1, psutil.cpu_count() + 1):
+        res.append('core%d'%i)
+    return res
+
+def get_cpu_percent():
+    cur_time = time.strftime('%T', time.localtime(time.time()))
+    cpu_res_turtle = psutil.cpu_percent()
+    percpu = psutil.cpu_percent(percpu=True)
+    rows = [cur_time, cpu_res_turtle]
+    rows += percpu
+    return rows
+
+def input_csv(data):
+    if os.path.exists(filename):
+        with open(filename, 'a+', newline='') as f:
+            w = csv.writer(f, dialect='excel')
+            w.writerow(data)
+    else:
+        with open(filename, 'a+', newline='') as f:
+            w = csv.writer(f, dialect='excel')
+            w.writerow(get_csvhead())
+            w.writerow(data)
+
+def generate_html():
+    xlist = []
+    ylist = []
+
+    with open(filename, 'r') as f:
+        r = csv.reader(f, dialect='excel')
+        content = list(r)
+        xlist.append(content[0][0])
+        for i in range(1, len(content[0])):
+            ylist.append([content[0][i]])
+        for i in range(1, len(content)):
+            xlist.append(content[i][0])
+            for j in range(1, len(content[i])):
+                ylist[j-1].append(content[i][j])
+    
+    line = Line()
+    line.add_xaxis(xlist[1:])
+    for i in range(len(ylist)):
+        line.add_yaxis(ylist[i][0], ylist[i][1:])
+    line.set_global_opts(title_opts=opts.TitleOpts('CPU实时监测'))
+    line.set_series_opts(markpoint_opts=opts.MarkPointItem(type_=['min', 'max']))
+    line.set_global_opts(xaxis_opts = opts.AxisOpts(name = xlist[0]))
+    line.set_global_opts(yaxis_opts = opts.AxisOpts(name = 'percent'))
+
+    line.render(today + '_cpu.html')
+    
+
+def main():
+    data = get_cpu_percent()
+    input_csv(data)
+    generate_html()
+
+
+if __name__ == "__main__":
+    main()
+```
+
