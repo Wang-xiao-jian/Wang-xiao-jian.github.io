@@ -1,0 +1,99 @@
+---
+layout: post
+title: "MySQL存储对象之视图(语法)"
+subtitle: "视图的语法"
+data: 2020-03-05 22:20:00 +0800
+author: "riki"
+header-img: "img/postfm/mysql.jpg"
+tags:
+- MySQL
+typora-root-url: ...
+---
+
+> 推荐去 MySQL 的官网查阅其[相关文档](https://dev.mysql.com/doc/refman/8.0/en/)
+
+#### 什么是视图？
+
+视图可以理解为一个虚拟表，它是储存的一个 SQL 语句，在被请求时，它能生成一个结果集。
+
+#### 视图的语法
+
+##### 创建视图（create view）
+
+```mysql
+CREATE
+    [OR REPLACE]
+    [ALGORITHM = {UNDEFINED | MERGE | TEMPTABLE}]
+    [DEFINER = user]
+    [SQL SECURITY { DEFINER | INVOKER }]
+    VIEW view_name [(column_list)]
+    AS select_statement
+    [WITH [CASCADED | LOCAL] CHECK OPTION]
+```
+
+如果给出 `OR REPLACE` 子句，那么当 view_name 指定的视图存在时，则替代其定义，否则，忽略该子句。
+
+`ALGORITHM` 有三个值：UNDEFINED， MERGE 以及 TEMPTABLE，它会影响MySQL处理视图的方式，详细的内容我准备放在下一节在讲。
+
+`DEFINER` 子句其意义是创建一个永久的记录，来表明该视图的创建者的账户，默认情况下是运行 create view 语句的账户。
+
+`SQL SECURITY` 子句是指视图查询数据时的安全检查方式，它的值只有两个：DEFINER，INVOKER，这就表明创建视图的用户或者引用视图的用户必须拥有相应的权限。
+
+那 MySQL 时如何检查视图权限呢？
+
+1. 在创建视图的时候，视图创建者必须拥有访问视图引用的上层对象的权限：如果这个视图的定义引用了某个表的某些列，那么视图的创建者必须拥有访问这些列的权限。
+2. 引用视图的用户必须拥有访问视图的适当权限。
+3. 当一个视图被引用时，视图是否具备访问上层对象的特权将根据视图创建者或者调用者的权限，这取决于 SQL SECURITY 的值是 DEFINER 还是 INVOKER。
+4. 如果对视图的引用引起了存储函数的运行，那么对执行语句的权限检查取决于存储函数的 SQL SECURITY 的值是定义者还是请求者。
+
+`select_statement` 提供视图的定义，它既可以从表查询，也可以从视图查询，它可以使用 JOIN，UNION，子查询等，甚至它也可以不指向任何表：
+
+`create view v_today (today) as select current_date;`
+
+由于 MySQL 不提供计算列，视图可能是一个好的方法用来提供计算列：
+
+```MySQL
+CREATE TABLE t (qty INT, price INT);
+INSERT INTO t VALUES(3, 50);
+CREATE VIEW v AS SELECT qty, price, qty*price AS value FROM t;
+```
+
+视图的定义在创建时就被确定，不会受后续以来表的变化而变化：如果视图的定义是 `select * from table`，那么如果 table 表后续新增了一个字段，这个字段也不会成为视图的一部分；如果 table 表后续删除了一个字段，那么当试图访问这个视图时，就会产生一个错误。
+
+新视图的列，和表一样，要有唯一的列名。默认情况下，`select_statement` 中的查询列名被当作视图的列名，当然也可以通过 `column_list` 来指定列名，但是一定要注意数量要匹配上。
+
+视图是属于数据库的，在不显示的指定数据库时，例如 db_name.view_name，那么新视图在默认（当前使用的）数据库中创建；如果 `select_statement` 中的表名和视图名也是不完全的，也会相当于当前使用的数据库解释。
+
+`WITH CHECK OPTION` 我也打算在之后的博文中说。
+
+##### 改变视图(alter view)
+
+```mysql
+ALTER
+    [ALGORITHM = {UNDEFINED | MERGE | TEMPTABLE}]
+    [DEFINER = user]
+    [SQL SECURITY { DEFINER | INVOKER }]
+    VIEW view_name [(column_list)]
+    AS select_statement
+    [WITH [CASCADED | LOCAL] CHECK OPTION]
+```
+
+用于改变视图的定义，指定的视图必须要存在。它的语法类似于 create view，执行该语句需要创建视图的相应权限以及删除视图的权限。
+
+##### 删除视图(drop view)
+
+```mysql
+DROP VIEW [IF EXISTS]
+    view_name [, view_name] ...
+    [RESTRICT | CASCADE]
+```
+
+用于删除一个或者多个视图。
+
+在 MySQL 8.0 环境下，如果参数列表中的某个视图不存在，那么会出现一个错误来表明某个视图无法删除，并且不做任何更改；但是在 MySQL 5.7 之前的版本环境下则不一样，它仍然会报错提示某个视图无法删除，但是会删除参数列表中的其余列表。
+
+`[RESTRICT | CASCADE]` 如果给出，则会被解析，忽略。官网上给出的原文是：
+
+>  `RESTRICT` and `CASCADE`, if given, are parsed and ignored. 
+
+我理解的话，就是忽略掉这两个子句。
